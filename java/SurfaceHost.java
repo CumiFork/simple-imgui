@@ -1,8 +1,11 @@
 import android.graphics.PixelFormat;
+import android.graphics.Region;
 import android.os.Looper;
 import android.util.Log;
 import android.view.Surface;
 import android.view.SurfaceControl;
+
+import java.lang.reflect.Method;
 
 public final class SurfaceHost {
     private static final String TAG = "SimpleImGui";
@@ -39,6 +42,7 @@ public final class SurfaceHost {
             transaction.setPosition(control, 0.0f, 0.0f);
             transaction.setLayer(control, 0x7FFFFFFF);
             transaction.setVisibility(control, true);
+            applyTouchPassThrough(transaction, control);
             transaction.apply();
 
             surface = new Surface(control);
@@ -63,6 +67,25 @@ public final class SurfaceHost {
         }
 
         System.exit(status);
+    }
+
+    private static void applyTouchPassThrough(SurfaceControl.Transaction transaction,
+                                              SurfaceControl control) {
+        try {
+            Method setTouchableRegion = SurfaceControl.Transaction.class.getDeclaredMethod(
+                    "setTouchableRegion", SurfaceControl.class, Region.class);
+            setTouchableRegion.setAccessible(true);
+            setTouchableRegion.invoke(transaction, control, new Region());
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            Method setTrustedOverlay = SurfaceControl.Transaction.class.getDeclaredMethod(
+                    "setTrustedOverlay", SurfaceControl.class, boolean.class);
+            setTrustedOverlay.setAccessible(true);
+            setTrustedOverlay.invoke(transaction, control, true);
+        } catch (Throwable ignored) {
+        }
     }
 
     private static int parseDimension(String[] args, int index, int fallback) {
