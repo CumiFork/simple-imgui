@@ -43,6 +43,17 @@ std::atomic<int> gTouchX{0};
 std::atomic<int> gTouchY{0};
 volatile sig_atomic_t gSignalStop = 0;
 
+struct MenuConfig {
+    bool menuExpanded = true;
+    bool showCrosshair = false;
+    float crosshairSize = 25.0f;
+    float crosshairThickness = 3.0f;
+    int counter = 0;
+    int selectedMode = 0;
+};
+
+MenuConfig gConfig;
+
 std::mutex gImGuiMutex;
 ImGuiIO* gImGuiIo = nullptr;
 
@@ -383,7 +394,76 @@ void configureStyle(ImGuiIO& io) {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 }
 
-bool drawOverlay(int width, int height, bool* windowOpen) {
+void drawFloatingToggle() {
+    ImGui::SetNextWindowPos(ImVec2(36.0f, 120.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Menu Toggle", nullptr,
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoSavedSettings)) {
+        const char* label = gConfig.menuExpanded ? "Hide Menu" : "Show Menu";
+        if (ImGui::Button(label)) {
+            gConfig.menuExpanded = !gConfig.menuExpanded;
+        }
+        ImGui::End();
+    } else {
+        ImGui::End();
+    }
+}
+
+void drawVisualTab() {
+    ImGui::Checkbox("Tampilkan Crosshair", &gConfig.showCrosshair);
+    if (!gConfig.showCrosshair) {
+        return;
+    }
+
+    const float controlWidth = ImGui::GetContentRegionAvail().x * 0.50f;
+    ImGui::SetNextItemWidth(controlWidth);
+    ImGui::SliderFloat("Ukuran", &gConfig.crosshairSize, 10.0f, 80.0f, "%.0f");
+    ImGui::SetNextItemWidth(controlWidth);
+    ImGui::SliderFloat("Tebal Garis", &gConfig.crosshairThickness, 1.0f, 10.0f, "%.1f");
+}
+
+void drawControlTab() {
+    const char* modes[] = {"Mode Normal", "Mode Cepat", "Mode Hemat"};
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.50f);
+    ImGui::Combo("Mode", &gConfig.selectedMode, modes, IM_ARRAYSIZE(modes));
+    ImGui::Text("Counter: %d", gConfig.counter);
+    if (ImGui::Button("Tambah +1")) {
+        ++gConfig.counter;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset")) {
+        gConfig.counter = 0;
+    }
+}
+
+bool drawSystemTab(int width, int height) {
+    ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+    ImGui::Text("Resolution: %d x %d", width, height);
+
+    if (!gTouchReady.load()) {
+        ImGui::Text("Touch: unavailable");
+    } else if (!gTouchSeen.load()) {
+        ImGui::Text("Touch: waiting for input");
+    } else {
+        ImGui::Text("Touch: (%d, %d)%s", gTouchX.load(), gTouchY.load(),
+                    gTouchDown.load() ? " down" : "");
+    }
+
+    ImGui::Separator();
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.63f, 0.16f, 0.16f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.74f, 0.20f, 0.20f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.50f, 0.11f, 0.11f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+    const bool exitPressed = ImGui::Button("Exit Overlay", ImVec2(-1.0f, 0.0f));
+    ImGui::PopStyleColor(4);
+    return exitPressed;
+}
+
+bool drawOverlay(int width, int height) {
+    if (!gConfig.menuExpanded) {
+        return false;
+    }
+
     ImGui::SetNextWindowPos(ImVec2(48.0f, 230.0f), ImGuiCond_FirstUseEver);
     const float maxWindowWidth = std::max(320.0f, static_cast<float>(width) - 96.0f);
     const float minWindowWidth = std::min(540.0f, maxWindowWidth);
@@ -391,42 +471,47 @@ bool drawOverlay(int width, int height, bool* windowOpen) {
             ImVec2(minWindowWidth, 0.0f),
             ImVec2(maxWindowWidth, std::max(360.0f, static_cast<float>(height) - 280.0f)));
 
-    if (ImGui::Begin("Simple ImGui Termux", windowOpen,
+    bool exitPressed = false;
+    if (ImGui::Begin("Simple ImGui Termux", nullptr,
                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoScrollbar)) {
-        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-        ImGui::Text("Resolution: %d x %d", width, height);
-
-        if (!gTouchReady.load()) {
-            ImGui::Text("Touch: unavailable");
-        } else if (!gTouchSeen.load()) {
-            ImGui::Text("Touch: waiting for input");
-        } else {
-            ImGui::Text("Touch: (%d, %d)%s", gTouchX.load(), gTouchY.load(),
-                        gTouchDown.load() ? " down" : "");
+        if (ImGui::BeginTabBar("MenuTabs")) {
+            if (ImGui::BeginTabItem("Visual")) {
+                drawVisualTab();
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Kontrol")) {
+                drawControlTab();
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("System")) {
+                exitPressed = drawSystemTab(width, height);
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
         }
-
-        ImGui::Separator();
-
-        static bool testToggle = false;
-        static float testSlider = 25.0f;
-        ImGui::Checkbox("Test Toggle", &testToggle);
-        ImGui::SetNextItemWidth(std::min(300.0f, static_cast<float>(width) * 0.32f));
-        ImGui::SliderFloat("Test Slider", &testSlider, 0.0f, 100.0f, "%.1f");
-
-        ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.63f, 0.16f, 0.16f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.74f, 0.20f, 0.20f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.50f, 0.11f, 0.11f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-        const bool exitPressed = ImGui::Button("Exit Overlay", ImVec2(-1.0f, 0.0f));
-        ImGui::PopStyleColor(4);
-
         ImGui::End();
-        return exitPressed;
+    } else {
+        ImGui::End();
     }
-    ImGui::End();
-    return false;
+    return exitPressed;
+}
+
+void drawFeatures(int width, int height) {
+    if (!gConfig.showCrosshair) {
+        return;
+    }
+
+    const ImVec2 center(static_cast<float>(width) * 0.5f,
+                        static_cast<float>(height) * 0.5f);
+    const float halfSize = gConfig.crosshairSize * 0.5f;
+    const ImU32 color = IM_COL32(230, 230, 225, 220);
+    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+
+    drawList->AddLine(ImVec2(center.x - halfSize, center.y),
+                      ImVec2(center.x + halfSize, center.y), color, gConfig.crosshairThickness);
+    drawList->AddLine(ImVec2(center.x, center.y - halfSize),
+                      ImVec2(center.x, center.y + halfSize), color, gConfig.crosshairThickness);
 }
 
 }  // namespace
@@ -514,9 +599,10 @@ Java_SurfaceHost_nativeStart(JNIEnv* env, jclass, jobject surface, jint width, j
             ImGui::NewFrame();
         }
 
-        bool windowOpen = true;
-        const bool exitPressed = drawOverlay(width, height, &windowOpen);
-        if (exitPressed || !windowOpen) {
+        drawFloatingToggle();
+        const bool exitPressed = drawOverlay(width, height);
+        drawFeatures(width, height);
+        if (exitPressed) {
             LOGI("Exit requested from UI");
             gRunning.store(false);
         }
