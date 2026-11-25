@@ -40,7 +40,7 @@ namespace {
 constexpr int kScanTargets = 64;
 constexpr int kMaxEspEntities = 64;
 constexpr const char* kEspProcessToken = "com.mobile.legends";
-constexpr const char* kEspModuleName = "libil2cpp.so";
+constexpr const char* kEspModuleCandidates[] = {"libil2cpp.so", "libmobile_bbai.so"};
 
 std::atomic<bool> gRunning{true};
 std::atomic<bool> gTouchReady{false};
@@ -49,6 +49,63 @@ std::atomic<bool> gTouchDown{false};
 std::atomic<int> gTouchX{0};
 std::atomic<int> gTouchY{0};
 volatile sig_atomic_t gSignalStop = 0;
+
+struct Offsets {
+    // dump.cs:138416 BattleManager.Instance; // 0x0
+    static constexpr uintptr_t battleManagerInstance = 0x0;
+    // dump.cs:138436 BattleManager.m_ShowPlayers; // 0x70
+    static constexpr uintptr_t entityList = 0x70;
+    // dump.cs:138431 BattleManager.m_LocalPlayerShow; // 0x48
+    static constexpr uintptr_t localPlayer = 0x48;
+    // dump.cs:133398 ShowEntity.IsPlayer; // 0x8B
+    static constexpr uintptr_t entityIsPlayer = 0x8B;
+    // dump.cs:133425 ShowEntity.m_bDeath; // 0xC5
+    static constexpr uintptr_t entityDead = 0xC5;
+    // dump.cs:133429 ShowEntity.m_EntityCampType; // 0xD0
+    static constexpr uintptr_t entityTeam = 0xD0;
+    // dump.cs:133465 ShowEntity.m_Hp; // 0x1A4
+    static constexpr uintptr_t entityHealth = 0x1A4;
+    // dump.cs:133466 ShowEntity.m_HpMax; // 0x1A8
+    static constexpr uintptr_t entityMaxHealth = 0x1A8;
+    // dump.cs:133517 ShowEntity.m_vUnityCachePosition; // 0x298
+    static constexpr uintptr_t entityPosition = 0x298;
+    // dump.cs:134916 ShowPlayer.m_ConfigSize; // 0x8E0
+    static constexpr uintptr_t playerConfigSize = 0x8E0;
+    // dump.cs:134918 ShowPlayer.m_HeroName; // 0x8F0
+    static constexpr uintptr_t playerName = 0x8F0;
+    // dump.cs:134921 ShowPlayer.m_iTeamId; // 0x908
+    static constexpr uintptr_t playerTeamId = 0x908;
+    // dump.cs:139538 ShowBattleCamera.m_CamPos; // 0x10
+    static constexpr uintptr_t cameraPosition = 0x10;
+    // dump.cs:139540 ShowBattleCamera.m_CamRotVect; // 0x28
+    static constexpr uintptr_t cameraRotationVector = 0x28;
+    // dump.cs:139544 ShowBattleCamera.m_CamRot; // 0x58
+    static constexpr uintptr_t cameraRotation = 0x58;
+    // dump.cs:139550 ShowBattleCamera.m_iFieldOfView; // 0x8C
+    static constexpr uintptr_t cameraFov = 0x8C;
+    // dump.cs:40037 MTCameraData.viewMatrix; // 0xD0
+    static constexpr uintptr_t cameraViewMatrix = 0xD0;
+    // dump.cs:40038 MTCameraData.projectionMatrix; // 0x110
+    static constexpr uintptr_t cameraProjectionMatrix = 0x110;
+    // dump.cs:40040 MTCameraData.pixelWidth backing field; // 0x190
+    static constexpr uintptr_t cameraPixelWidth = 0x190;
+    // dump.cs:40041 MTCameraData.pixelHeight backing field; // 0x194
+    static constexpr uintptr_t cameraPixelHeight = 0x194;
+    // dump.cs:138482 BattleManager.GetAllEntities(); // 0x330BF2C
+    static constexpr uintptr_t battleManagerGetAllEntitiesRva = 0x330BF2C;
+    // dump.cs:138593 BattleManager..cctor(); // 0x3319394
+    static constexpr uintptr_t battleManagerCctorRva = 0x3319394;
+    // dump.cs:139573 ShowBattleCamera.get_m_uCameraPlayerId(); // 0x385BDF4
+    static constexpr uintptr_t showBattleCameraGetPlayerIdRva = 0x385BDF4;
+    // dump.cs:139575 ShowBattleCamera.get_CameraDepth(); // 0x385BE80
+    static constexpr uintptr_t showBattleCameraGetDepthRva = 0x385BE80;
+    // dump.cs:139623 ShowBattleCamera..cctor(); // 0x3861ADC
+    static constexpr uintptr_t showBattleCameraCctorRva = 0x3861ADC;
+    // System.Collections.Generic.List<T> IL2CPP layout, not a dump.cs field
+    static constexpr uintptr_t listItems = 0x10;
+    // System.Collections.Generic.List<T> IL2CPP layout, not a dump.cs field
+    static constexpr uintptr_t listCount = 0x18;
+};
 
 struct MenuConfig {
     bool menuExpanded = true;
@@ -62,63 +119,16 @@ struct MenuConfig {
     bool espDistance = true;
     float espMaxDistance = 300.0f;
     float espColor[4] = {1.0f, 0.2f, 0.2f, 1.0f};
-    ImU64 espStaticRva = 0;
     int counter = 0;
     int selectedMode = 0;
-};
-
-struct Offsets {
-    // BattleManager.Instance; // 0x0
-    uintptr_t battleManagerInstance = 0x0;
-    // BattleManager.m_ShowPlayers; // 0x70
-    uintptr_t entityList = 0x70;
-    // BattleManager.m_LocalPlayerShow; // 0x48
-    uintptr_t localPlayer = 0x48;
-    // ShowEntity.IsPlayer; // 0x8B
-    uintptr_t entityIsPlayer = 0x8B;
-    // ShowEntity.m_bDeath; // 0xC5
-    uintptr_t entityDead = 0xC5;
-    // ShowEntity.m_EntityCampType; // 0xD0
-    uintptr_t entityTeam = 0xD0;
-    // ShowEntity.m_Hp; // 0x1A4
-    uintptr_t entityHealth = 0x1A4;
-    // ShowEntity.m_HpMax; // 0x1A8
-    uintptr_t entityMaxHealth = 0x1A8;
-    // ShowEntity.m_vUnityCachePosition; // 0x298
-    uintptr_t entityPosition = 0x298;
-    // ShowPlayer.m_ConfigSize; // 0x8E0
-    uintptr_t playerConfigSize = 0x8E0;
-    // ShowPlayer.m_HeroName; // 0x8F0
-    uintptr_t playerName = 0x8F0;
-    // ShowPlayer.m_iTeamId; // 0x908
-    uintptr_t playerTeamId = 0x908;
-    // ShowBattleCamera.m_CamPos; // 0x10
-    uintptr_t cameraPosition = 0x10;
-    // ShowBattleCamera.m_CamRotVect; // 0x28
-    uintptr_t cameraRotationVector = 0x28;
-    // ShowBattleCamera.m_CamRot; // 0x58
-    uintptr_t cameraRotation = 0x58;
-    // ShowBattleCamera.m_iFieldOfView; // 0x8C
-    uintptr_t cameraFov = 0x8C;
-    // MTCameraData.viewMatrix; // 0xD0
-    uintptr_t cameraViewMatrix = 0xD0;
-    // MTCameraData.projectionMatrix; // 0x110
-    uintptr_t cameraProjectionMatrix = 0x110;
-    // MTCameraData.pixelWidth; // 0x190
-    uintptr_t cameraPixelWidth = 0x190;
-    // MTCameraData.pixelHeight; // 0x194
-    uintptr_t cameraPixelHeight = 0x194;
-    // System.Collections.Generic.List<T>._items, IL2CPP layout, not a dump.cs field
-    uintptr_t listItems = 0x10;
-    // System.Collections.Generic.List<T>._size, IL2CPP layout, not a dump.cs field
-    uintptr_t listCount = 0x18;
-    // TODO: tidak ditemukan di dump.cs, alamat tetap blok static fields tidak tersedia
-    uintptr_t staticFieldsAddress = 0x0;
 };
 
 MenuConfig gConfig;
 Offsets gOffsets;
 std::string gEspStatus = "ESP: menunggu target";
+std::string gEspModuleStatus = "ESP modul: menunggu target";
+std::string gEspBattleStatus = "ESP BattleManager: menunggu target";
+std::string gEspCameraStatus = "ESP kamera: menunggu target";
 
 std::mutex gImGuiMutex;
 ImGuiIO* gImGuiIo = nullptr;
@@ -541,6 +551,123 @@ uintptr_t findModuleBase(pid_t pid, const char* moduleName) {
     return validRemotePointer(base) ? base : 0;
 }
 
+uintptr_t findEspModuleBase(pid_t pid, const char** moduleName) {
+    for (const char* candidate : kEspModuleCandidates) {
+        const uintptr_t base = findModuleBase(pid, candidate);
+        if (base != 0) {
+            *moduleName = candidate;
+            return base;
+        }
+    }
+    return 0;
+}
+
+bool cameraBlockValid(pid_t pid, uintptr_t base) {
+    float position[3] = {};
+    float rotation[4] = {};
+    int fov = 0;
+    if (!readRemote(pid, base + Offsets::cameraPosition, position, sizeof(position)) ||
+        !readRemote(pid, base + Offsets::cameraRotation, rotation, sizeof(rotation)) ||
+        !readRemote(pid, base + Offsets::cameraFov, &fov, sizeof(fov))) {
+        return false;
+    }
+
+    float norm = 0.0f;
+    for (float value : position) {
+        if (!std::isfinite(value)) {
+            return false;
+        }
+    }
+    for (float value : rotation) {
+        if (!std::isfinite(value)) {
+            return false;
+        }
+        norm += value * value;
+    }
+    norm = sqrtf(norm);
+    return std::isfinite(norm) && norm > 0.0001f && fov >= 30 && fov <= 120;
+}
+
+bool battleBlockValid(pid_t pid, uintptr_t base) {
+    uintptr_t manager = 0;
+    uintptr_t list = 0;
+    if (!readRemote(pid, base + Offsets::battleManagerInstance, &manager,
+                    sizeof(manager)) ||
+        !validRemotePointer(manager) ||
+        !readRemote(pid, manager + Offsets::entityList, &list, sizeof(list)) ||
+        !validRemotePointer(list)) {
+        return false;
+    }
+    return true;
+}
+
+enum class StaticBlock {
+    BattleManager,
+    Camera
+};
+
+bool discoverStaticBlock(pid_t pid, uintptr_t moduleBase, uintptr_t methodRva,
+                         StaticBlock kind, uintptr_t* result) {
+    constexpr size_t kInstructionCount = 128;
+    uint32_t instructions[kInstructionCount] = {};
+    const uintptr_t methodAddress = moduleBase + methodRva;
+    if (!readRemote(pid, methodAddress, instructions, sizeof(instructions))) {
+        return false;
+    }
+
+    for (size_t index = 0; index < kInstructionCount; ++index) {
+        const uint32_t instruction = instructions[index];
+        if ((instruction & 0x9F000000u) != 0x90000000u) {
+            continue;
+        }
+
+        const int destination = static_cast<int>(instruction & 0x1Fu);
+        const uint64_t low = (instruction >> 29) & 0x3u;
+        const uint64_t high = (instruction >> 5) & 0x7FFFFu;
+        uint64_t pageOffset = (high << 2) | low;
+        if ((pageOffset & (1ULL << 20)) != 0) {
+            pageOffset |= ~((1ULL << 21) - 1);
+        }
+        pageOffset <<= 12;
+
+        const uintptr_t instructionPc =
+            methodAddress + static_cast<uintptr_t>(index * 4);
+        const uintptr_t page =
+            (instructionPc & ~static_cast<uintptr_t>(0xFFF)) +
+            static_cast<uintptr_t>(pageOffset);
+        const size_t limit = std::min(kInstructionCount, index + 16);
+
+        for (size_t lookahead = index + 1; lookahead < limit; ++lookahead) {
+            const uint32_t load = instructions[lookahead];
+            if ((load & 0xFFC00000u) != 0xF9400000u) {
+                continue;
+            }
+            const int baseRegister = static_cast<int>((load >> 5) & 0x1Fu);
+            if (baseRegister != destination) {
+                continue;
+            }
+
+            const uintptr_t slot =
+                page + static_cast<uintptr_t>(((load >> 10) & 0xFFFu) * 8);
+            uintptr_t candidate = 0;
+            if (!readRemote(pid, slot, &candidate, sizeof(candidate)) ||
+                !validRemotePointer(candidate)) {
+                continue;
+            }
+
+            const bool valid = kind == StaticBlock::BattleManager
+                                   ? battleBlockValid(pid, candidate)
+                                   : cameraBlockValid(pid, candidate);
+            if (!valid) {
+                continue;
+            }
+            *result = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
 void multiplyMatrix(const float left[16], const float right[16], float output[16]) {
     for (int column = 0; column < 4; ++column) {
         for (int row = 0; row < 4; ++row) {
@@ -636,13 +763,60 @@ bool worldToScreen(const float world[3], const float viewProjection[16], int wid
 void drawEsp(int width, int height) {
     static pid_t cachedPid = -1;
     static uintptr_t cachedModuleBase = 0;
+    static uintptr_t cachedBattleBase = 0;
+    static uintptr_t cachedCameraBase = 0;
+    static const char* cachedModuleName = "";
     static auto lastProbe = std::chrono::steady_clock::time_point::min();
     const auto now = std::chrono::steady_clock::now();
 
     if (cachedPid <= 0 || cachedModuleBase == 0 ||
         now - lastProbe > std::chrono::seconds(2)) {
         cachedPid = findGameProcess();
-        cachedModuleBase = cachedPid > 0 ? findModuleBase(cachedPid, kEspModuleName) : 0;
+        cachedModuleName = "";
+        cachedModuleBase = cachedPid > 0 ? findEspModuleBase(cachedPid, &cachedModuleName) : 0;
+        cachedBattleBase = 0;
+        cachedCameraBase = 0;
+
+        if (cachedPid <= 0) {
+            gEspModuleStatus = "ESP modul: target tidak ditemukan";
+        } else if (cachedModuleBase == 0) {
+            gEspModuleStatus = "ESP modul: tidak ditemukan";
+        } else {
+            char moduleLabel[128];
+            snprintf(moduleLabel, sizeof(moduleLabel), "ESP modul: %s", cachedModuleName);
+            gEspModuleStatus = moduleLabel;
+
+            discoverStaticBlock(cachedPid, cachedModuleBase,
+                                Offsets::battleManagerGetAllEntitiesRva,
+                                StaticBlock::BattleManager, &cachedBattleBase);
+            discoverStaticBlock(cachedPid, cachedModuleBase,
+                                Offsets::showBattleCameraGetPlayerIdRva,
+                                StaticBlock::Camera, &cachedCameraBase);
+        }
+
+        char battleLabel[160];
+        if (cachedBattleBase != 0) {
+            snprintf(battleLabel, sizeof(battleLabel), "ESP BattleManager: 0x%llX",
+                     static_cast<unsigned long long>(cachedBattleBase));
+        } else {
+            snprintf(battleLabel, sizeof(battleLabel),
+                     "ESP BattleManager: gagal dari RVA 0x%llX",
+                     static_cast<unsigned long long>(
+                         Offsets::battleManagerGetAllEntitiesRva));
+        }
+        gEspBattleStatus = battleLabel;
+
+        char cameraLabel[160];
+        if (cachedCameraBase != 0) {
+            snprintf(cameraLabel, sizeof(cameraLabel), "ESP kamera: 0x%llX",
+                     static_cast<unsigned long long>(cachedCameraBase));
+        } else {
+            snprintf(cameraLabel, sizeof(cameraLabel),
+                     "ESP kamera: gagal dari RVA 0x%llX",
+                     static_cast<unsigned long long>(
+                         Offsets::showBattleCameraGetPlayerIdRva));
+        }
+        gEspCameraStatus = cameraLabel;
         lastProbe = now;
     }
 
@@ -651,27 +825,22 @@ void drawEsp(int width, int height) {
         return;
     }
     if (cachedModuleBase == 0) {
-        gEspStatus = "ESP: libil2cpp.so tidak ditemukan";
+        gEspStatus = "ESP: modul game tidak ditemukan";
         return;
     }
-
-    uintptr_t staticBase = gOffsets.staticFieldsAddress;
-    if (staticBase == 0) {
-        if (gConfig.espStaticRva == 0) {
-            gEspStatus = "ESP: RVA static fields belum diisi";
-            return;
-        }
-        staticBase = cachedModuleBase + static_cast<uintptr_t>(gConfig.espStaticRva);
+    if (cachedBattleBase == 0 || cachedCameraBase == 0) {
+        gEspStatus = "ESP: blok static gagal ditemukan dari RVA dump.cs";
+        return;
     }
 
     float cameraPosition[3] = {0.0f, 0.0f, 0.0f};
     float cameraQuaternion[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     int fovValue = 0;
-    if (!readRemote(cachedPid, staticBase + gOffsets.cameraPosition, cameraPosition,
-                    sizeof(cameraPosition)) ||
-        !readRemote(cachedPid, staticBase + gOffsets.cameraRotation, cameraQuaternion,
-                    sizeof(cameraQuaternion)) ||
-        !readRemote(cachedPid, staticBase + gOffsets.cameraFov, &fovValue,
+    if (!readRemote(cachedPid, cachedCameraBase + gOffsets.cameraPosition,
+                    cameraPosition, sizeof(cameraPosition)) ||
+        !readRemote(cachedPid, cachedCameraBase + gOffsets.cameraRotation,
+                    cameraQuaternion, sizeof(cameraQuaternion)) ||
+        !readRemote(cachedPid, cachedCameraBase + gOffsets.cameraFov, &fovValue,
                     sizeof(fovValue))) {
         gEspStatus = "ESP: data kamera tidak terbaca";
         return;
@@ -717,8 +886,8 @@ void drawEsp(int width, int height) {
     multiplyMatrix(projection, view, viewProjection);
 
     uintptr_t manager = 0;
-    if (!readRemote(cachedPid, staticBase + gOffsets.battleManagerInstance, &manager,
-                    sizeof(manager)) ||
+    if (!readRemote(cachedPid, cachedBattleBase + gOffsets.battleManagerInstance,
+                    &manager, sizeof(manager)) ||
         !validRemotePointer(manager)) {
         gEspStatus = "ESP: BattleManager tidak tersedia";
         return;
@@ -890,9 +1059,16 @@ void drawEspTab() {
     const float controlWidth = ImGui::GetContentRegionAvail().x * 0.50f;
     ImGui::SetNextItemWidth(controlWidth);
     ImGui::SliderFloat("Jarak Maksimal", &gConfig.espMaxDistance, 50.0f, 500.0f, "%.0f");
-    ImGui::SetNextItemWidth(controlWidth);
-    ImGui::InputScalar("RVA Static", ImGuiDataType_U64, &gConfig.espStaticRva,
-                       nullptr, nullptr, "0x%llX");
+
+    ImGui::Text("RVA GetAllEntities: 0x%llX", static_cast<unsigned long long>(
+            Offsets::battleManagerGetAllEntitiesRva));
+    ImGui::Text("RVA Camera PlayerId: 0x%llX", static_cast<unsigned long long>(
+            Offsets::showBattleCameraGetPlayerIdRva));
+    ImGui::Text("RVA Camera Depth: 0x%llX", static_cast<unsigned long long>(
+            Offsets::showBattleCameraGetDepthRva));
+    ImGui::Text("Modul: %s", gEspModuleStatus.c_str());
+    ImGui::Text("BattleManager: %s", gEspBattleStatus.c_str());
+    ImGui::Text("Kamera: %s", gEspCameraStatus.c_str());
     ImGui::ColorEdit4("Warna ESP", gConfig.espColor);
 }
 
@@ -924,6 +1100,9 @@ bool drawSystemTab(int width, int height) {
     }
 
     ImGui::Text("ESP: %s", gEspStatus.c_str());
+    ImGui::Text("ESP modul: %s", gEspModuleStatus.c_str());
+    ImGui::Text("ESP BattleManager: %s", gEspBattleStatus.c_str());
+    ImGui::Text("ESP kamera: %s", gEspCameraStatus.c_str());
 
     ImGui::Separator();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.63f, 0.16f, 0.16f, 1.0f));
