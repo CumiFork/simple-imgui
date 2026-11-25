@@ -433,6 +433,7 @@ bool drawOverlay(int width, int height, bool* windowOpen) {
 
 extern "C" JNIEXPORT void JNICALL
 Java_SurfaceHost_nativeStart(JNIEnv* env, jclass, jobject surface, jint width, jint height) {
+    LOGI("nativeStart %dx%d", width, height);
     gRunning.store(true);
     gSignalStop = 0;
     gTouchSeen.store(false);
@@ -516,6 +517,7 @@ Java_SurfaceHost_nativeStart(JNIEnv* env, jclass, jobject surface, jint width, j
         bool windowOpen = true;
         const bool exitPressed = drawOverlay(width, height, &windowOpen);
         if (exitPressed || !windowOpen) {
+            LOGI("Exit requested from UI");
             gRunning.store(false);
         }
 
@@ -531,6 +533,10 @@ Java_SurfaceHost_nativeStart(JNIEnv* env, jclass, jobject surface, jint width, j
     }
 
     gRunning.store(false);
+    if (gSignalStop != 0) {
+        LOGW("Stop requested by signal");
+    }
+    LOGI("Render loop stopped");
     if (inputThread.joinable()) {
         inputThread.join();
     }
