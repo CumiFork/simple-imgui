@@ -1,0 +1,116 @@
+#!/system/bin/sh
+# Simple ImGui standalone overlay for Android 14 (arm64).
+set -u
+
+RUN_DIR="/data/local/tmp/simple_imgui_run"
+PAYLOAD_MARKER="__SIMPLE_IMGUI_PAYLOAD__"
+FALLBACK_WIDTH="1080"
+FALLBACK_HEIGHT="2460"
+
+SELF="$0"
+if [ ! -f "$SELF" ]; then
+    echo "[!] Run this script from a file, not from a pipe." >&2
+    exit 1
+fi
+SELF_DIR=$(cd "$(dirname "$SELF")" && pwd)
+SELF="$SELF_DIR/$(basename "$SELF")"
+
+if [ "$(id -u 2>/dev/null || echo 1)" -ne 0 ]; then
+    if ! command -v su >/dev/null 2>&1; then
+        echo "[!] Root access is required." >&2
+        exit 1
+    fi
+    QUOTED_SELF=$(printf '%s' "$SELF" | sed "s/'/'\\\\''/g")
+    echo "[*] Re-running with root privileges"
+    exec su -c "sh '$QUOTED_SELF'"
+fi
+
+unset LD_LIBRARY_PATH
+unset LD_PRELOAD
+PATH="/system/bin:/system/xbin:$PATH"
+export PATH
+
+cleanup() {
+    rm -rf "$RUN_DIR"
+}
+trap cleanup EXIT HUP INT TERM
+
+WIDTH=""
+HEIGHT=""
+WM_BIN=""
+if command -v wm >/dev/null 2>&1; then
+    WM_BIN=$(command -v wm)
+elif [ -x /system/bin/wm ]; then
+    WM_BIN="/system/bin/wm"
+fi
+
+if [ -n "$WM_BIN" ]; then
+    WM_OUTPUT=$("$WM_BIN" size 2>/dev/null || true)
+    SIZE=$(printf '%s\n' "$WM_OUTPUT" | sed -n 's/.*Override size:[[:space:]]*\([0-9][0-9]*x[0-9][0-9]*\).*/\1/p' | tail -n 1)
+    if [ -z "$SIZE" ]; then
+        SIZE=$(printf '%s\n' "$WM_OUTPUT" | sed -n 's/.*Physical size:[[:space:]]*\([0-9][0-9]*x[0-9][0-9]*\).*/\1/p' | tail -n 1)
+    fi
+    if [ -n "$SIZE" ]; then
+        WIDTH=${SIZE%%x*}
+        HEIGHT=${SIZE#*x}
+    fi
+fi
+
+case "$WIDTH" in
+    ''|*[!0-9]*) WIDTH="$FALLBACK_WIDTH" ;;
+esac
+case "$HEIGHT" in
+    ''|*[!0-9]*) HEIGHT="$FALLBACK_HEIGHT" ;;
+esac
+if [ "$WIDTH" -le 0 ]; then WIDTH="$FALLBACK_WIDTH"; fi
+if [ "$HEIGHT" -le 0 ]; then HEIGHT="$FALLBACK_HEIGHT"; fi
+
+APP_PROCESS="/system/bin/app_process"
+if [ ! -x "$APP_PROCESS" ]; then
+    APP_PROCESS="/system/bin/app_process64"
+fi
+if [ ! -x "$APP_PROCESS" ]; then
+    echo "[!] app_process not found." >&2
+    exit 1
+fi
+
+mkdir -p "$RUN_DIR" || {
+    echo "[!] Could not create $RUN_DIR" >&2
+    exit 1
+}
+
+PAYLOAD_TGZ="$RUN_DIR/payload.tar.gz"
+PAYLOAD_WRITTEN=0
+awk -v marker="$PAYLOAD_MARKER" '$0 == marker { found = 1; next } found { print }' "$SELF" \
+    | base64 -d > "$PAYLOAD_TGZ"
+if [ -s "$PAYLOAD_TGZ" ]; then
+    PAYLOAD_WRITTEN=1
+fi
+if [ "$PAYLOAD_WRITTEN" -ne 1 ]; then
+    echo "[!] Embedded payload is missing or invalid." >&2
+    exit 1
+fi
+
+tar -xzf "$PAYLOAD_TGZ" -C "$RUN_DIR" classes.dex libsimple_imgui.so || {
+    echo "[!] Could not extract the overlay payload." >&2
+    exit 1
+}
+rm -f "$PAYLOAD_TGZ"
+
+if [ ! -f "$RUN_DIR/classes.dex" ] || [ ! -f "$RUN_DIR/libsimple_imgui.so" ]; then
+    echo "[!] Overlay files are incomplete." >&2
+    exit 1
+fi
+chmod 644 "$RUN_DIR/classes.dex"
+chmod 755 "$RUN_DIR/libsimple_imgui.so"
+
+echo "[*] Display: ${WIDTH}x${HEIGHT}"
+echo "[*] Starting Simple ImGui overlay. Use Exit Overlay to close it."
+
+CLASSPATH="$RUN_DIR/classes.dex" \
+    "$APP_PROCESS" /system/bin SurfaceHost "$WIDTH" "$HEIGHT" "$RUN_DIR/libsimple_imgui.so"
+STATUS=$?
+
+echo "[*] Overlay exited with status $STATUS"
+exit "$STATUS"
+__SIMPLE_IMGUI_PAYLOAD__

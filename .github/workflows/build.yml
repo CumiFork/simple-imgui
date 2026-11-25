@@ -1,0 +1,113 @@
+name: Build simple-imgui
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0 ndk;26.3.11579264'
+
+      - name: Clone Dear ImGui v1.91.5
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v1.91.5 https://github.com/ocornut/imgui.git jni/imgui
+          test -f jni/imgui/imgui.cpp
+
+      - name: Build classes.dex
+        run: |
+          set -euo pipefail
+          ANDROID_JAR="$ANDROID_HOME/platforms/android-34/android.jar"
+          D8="$ANDROID_HOME/build-tools/34.0.0/d8"
+          test -f "$ANDROID_JAR"
+          test -x "$D8"
+
+          mkdir -p build/classes build/dex
+          javac --release 8 \
+            -classpath "$ANDROID_JAR" \
+            -d build/classes \
+            java/SurfaceHost.java
+          "$D8" --min-api 29 \
+            --lib "$ANDROID_JAR" \
+            --output build/dex \
+            build/classes/SurfaceHost.class
+          test -f build/dex/classes.dex
+          file build/dex/classes.dex
+
+      - name: Build libsimple_imgui.so
+        run: |
+          set -euo pipefail
+          NDK_DIR="$ANDROID_HOME/ndk/26.3.11579264"
+          test -f "$NDK_DIR/build/cmake/android.toolchain.cmake"
+
+          cmake -S jni -B build/native \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_DIR/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-29 \
+            -DANDROID_STL=c++_static \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/native --parallel "$(nproc)"
+
+          test -f build/native/libsimple_imgui.so
+          file build/native/libsimple_imgui.so | grep -q 'ARM aarch64'
+
+      - name: Package simple_imgui.sh
+        run: |
+          set -euo pipefail
+          mkdir -p build/package
+          cp build/dex/classes.dex build/package/classes.dex
+          cp build/native/libsimple_imgui.so build/package/libsimple_imgui.so
+          tar -C build/package -czf build/simple_imgui_payload.tar.gz classes.dex libsimple_imgui.so
+          base64 -w 76 build/simple_imgui_payload.tar.gz > build/payload.b64
+
+          cp scripts/launcher.sh.in simple_imgui.sh
+          printf '\n' >> simple_imgui.sh
+          cat build/payload.b64 >> simple_imgui.sh
+          printf '\n' >> simple_imgui.sh
+
+          test -s simple_imgui.sh
+          chmod +x simple_imgui.sh
+          sh -n simple_imgui.sh
+          ls -lh simple_imgui.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: simple-imgui-standalone
+          path: simple_imgui.sh
+          if-no-files-found: error
+
+      - name: Publish latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Simple ImGui Overlay
+          body: |
+            Standalone Dear ImGui overlay for Android 14 arm64.
+
+            Requirements: rooted device, Termux, Android 14 (API 34).
+            Run: `su -c "sh simple_imgui.sh"`
+          make_latest: true
+          files: simple_imgui.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

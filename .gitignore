@@ -1,0 +1,6 @@
+build/
+jni/imgui/
+*.sh
+*.tar.gz
+*.class
+classes.dex
