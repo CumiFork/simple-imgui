@@ -385,10 +385,14 @@ void configureStyle(ImGuiIO& io) {
 
 bool drawOverlay(int width, int height, bool* windowOpen) {
     ImGui::SetNextWindowPos(ImVec2(48.0f, 230.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(570.0f, 0.0f), ImGuiCond_FirstUseEver);
+    const float maxWindowWidth = std::max(320.0f, static_cast<float>(width) - 96.0f);
+    const float minWindowWidth = std::min(540.0f, maxWindowWidth);
+    ImGui::SetNextWindowSizeConstraints(
+            ImVec2(minWindowWidth, 0.0f),
+            ImVec2(maxWindowWidth, std::max(360.0f, static_cast<float>(height) - 280.0f)));
 
     if (ImGui::Begin("Simple ImGui Termux", windowOpen,
-                     ImGuiWindowFlags_NoSavedSettings)) {
+                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::Text("Resolution: %d x %d", width, height);
 
@@ -406,6 +410,7 @@ bool drawOverlay(int width, int height, bool* windowOpen) {
         static bool testToggle = false;
         static float testSlider = 25.0f;
         ImGui::Checkbox("Test Toggle", &testToggle);
+        ImGui::SetNextItemWidth(std::min(300.0f, static_cast<float>(width) * 0.32f));
         ImGui::SliderFloat("Test Slider", &testSlider, 0.0f, 100.0f, "%.1f");
 
         ImGui::Spacing();
