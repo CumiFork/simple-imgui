@@ -392,7 +392,8 @@ bool drawOverlay(int width, int height, bool* windowOpen) {
             ImVec2(maxWindowWidth, std::max(360.0f, static_cast<float>(height) - 280.0f)));
 
     if (ImGui::Begin("Simple ImGui Termux", windowOpen,
-                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize)) {
+                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoScrollbar)) {
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::Text("Resolution: %d x %d", width, height);
 
